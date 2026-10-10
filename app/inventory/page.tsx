@@ -26,6 +26,7 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [adjustDelta, setAdjustDelta] = useState('');
+  const [adjustError, setAdjustError] = useState('');
   const [formError, setFormError] = useState('');
 
   if (!roleAllowed(currentUser?.role, 'inventory')) return <Denied />;
@@ -49,7 +50,7 @@ export default function InventoryPage() {
     setEditing({ ...EMPTY, id: uid('p'), sku: `9${String(Math.floor(1000 + Math.random() * 9000))}` });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return;
     if (!editing.name.trim()) return setFormError('Product name is required.');
     if (!editing.sku.trim()) return setFormError('SKU is required.');
@@ -58,7 +59,7 @@ export default function InventoryPage() {
       (p) => p.sku.toLowerCase() === editing.sku.trim().toLowerCase() && p.id !== editing.id,
     );
     if (dup) return setFormError(`SKU "${editing.sku}" is already used by ${dup.name}.`);
-    saveProduct({
+    const res = await saveProduct({
       ...editing,
       name: editing.name.trim(),
       sku: editing.sku.trim(),
@@ -66,14 +67,17 @@ export default function InventoryPage() {
       stock: Math.max(0, Math.floor(editing.stock)),
       threshold: Math.max(0, Math.floor(editing.threshold)),
     });
+    if (res.error) return setFormError(res.error);
     setEditing(null);
   };
 
-  const doAdjust = () => {
+  const doAdjust = async () => {
     if (!adjusting) return;
     const delta = parseInt(adjustDelta, 10);
     if (isNaN(delta) || delta === 0) return;
-    adjustStock(adjusting.id, delta);
+    setAdjustError('');
+    const res = await adjustStock(adjusting.id, delta);
+    if (res.error) return setAdjustError(res.error);
     setAdjusting(null);
     setAdjustDelta('');
   };
@@ -226,6 +230,7 @@ export default function InventoryPage() {
               ))}
               <button className="btn-secondary text-xs !px-3 !py-1.5" onClick={() => setAdjustDelta(String(-adjusting.stock))}>Zero it</button>
             </div>
+            {adjustError && <p className="text-xs text-red-600 mt-2">{adjustError}</p>}
             <div className="flex gap-2 mt-5">
               <button className="btn-secondary flex-1" onClick={() => setAdjusting(null)}>Cancel</button>
               <button className="btn-primary flex-1" onClick={doAdjust}>Apply</button>

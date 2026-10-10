@@ -28,12 +28,13 @@ export default function ReturnsPage() {
     ? data.sales.filter((s) => s.id.toLowerCase().includes(query.trim().toLowerCase()))
     : [...data.sales].sort((a, b) => +new Date(b.date) - +new Date(a.date)).slice(0, 10);
 
-  const submit = () => {
+  const submit = async () => {
     if (!sale) return;
     const lines = Object.entries(qtys)
       .filter(([, q]) => q > 0)
       .map(([productId, qty]) => ({ productId, qty }));
-    const res = processReturn({ saleId: sale.id, lines, reason, cashier: currentUser.name });
+    setMessage(null);
+    const res = await processReturn({ saleId: sale.id, lines, reason, cashier: currentUser.name });
     if ('error' in res) {
       setMessage({ ok: false, text: res.error });
     } else {

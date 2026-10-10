@@ -21,18 +21,62 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname === clean || pathname.endsWith(clean + '/');
 }
 
+function SetupNotice() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-brand-900 via-brand-700 to-indigo-900">
+      <div className="card w-full max-w-xl p-8">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-600">
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
+              <path d="M13 2 4.5 13.5H11L9.5 22 19 9.5h-6.5L13 2z" />
+            </svg>
+          </span>
+          <span className="text-lg font-bold">SwiftPOS</span>
+        </div>
+        <h1 className="text-xl font-bold text-slate-900 mt-2">Backend not connected yet</h1>
+        <p className="text-sm text-slate-500 mt-2">
+          SwiftPOS runs on Supabase (PostgreSQL + Auth). This deployment was built without
+          credentials, so it is showing this notice instead of the app.
+        </p>
+        <ol className="text-sm text-slate-600 mt-4 space-y-2 list-decimal list-inside">
+          <li>Create a free project at supabase.com.</li>
+          <li>
+            Run <code className="bg-slate-100 px-1 rounded">supabase/schema.sql</code> in the SQL
+            editor.
+          </li>
+          <li>
+            Seed demo data:{' '}
+            <code className="bg-slate-100 px-1 rounded text-xs">
+              SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/seed.mjs
+            </code>
+          </li>
+          <li>
+            Rebuild with{' '}
+            <code className="bg-slate-100 px-1 rounded text-xs">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
+            <code className="bg-slate-100 px-1 rounded text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{' '}
+            set, then redeploy.
+          </li>
+        </ol>
+        <p className="text-xs text-slate-400 mt-4">
+          Full steps are in the README. No keys are hardcoded anywhere in this project.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { loaded, currentUser, logout } = useStore();
+  const { loaded, configured, online, pendingSync, currentUser, logout } = useStore();
 
   const onLoginPage = isActive(pathname, '/login/');
 
   useEffect(() => {
-    if (loaded && !currentUser && !onLoginPage) {
+    if (loaded && configured && !currentUser && !onLoginPage) {
       router.replace('/login/');
     }
-  }, [loaded, currentUser, onLoginPage, router]);
+  }, [loaded, configured, currentUser, onLoginPage, router]);
 
   if (!loaded) {
     return (
@@ -40,6 +84,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <div className="text-slate-400 text-sm">Loading SwiftPOS…</div>
       </div>
     );
+  }
+
+  if (!configured) {
+    return <SetupNotice />;
   }
 
   if (onLoginPage) {
@@ -70,14 +118,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="text-lg font-bold tracking-tight">SwiftPOS</span>
           </div>
-          <span className="text-[11px] font-bold uppercase tracking-widest bg-amber-400 text-amber-950 px-2.5 py-1 rounded-full">
-            Concept Demo
+          <span className="text-[11px] font-bold uppercase tracking-widest bg-emerald-400 text-emerald-950 px-2.5 py-1 rounded-full">
+            Portfolio build
           </span>
-          <span className="hidden md:inline text-xs text-brand-100/70">SwiftMart General Store (fictional)</span>
+          <span className="hidden md:inline text-xs text-brand-100/70">
+            SwiftMart General Store (fictional demo data)
+          </span>
+          {!online && (
+            <span className="text-[11px] font-bold uppercase tracking-widest bg-red-500 text-white px-2.5 py-1 rounded-full">
+              Offline
+            </span>
+          )}
+          {pendingSync > 0 && (
+            <span
+              className="text-[11px] font-bold uppercase tracking-widest bg-amber-400 text-amber-950 px-2.5 py-1 rounded-full"
+              title="Sales queued on this device waiting to sync to Supabase"
+            >
+              {pendingSync} pending sync
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-3">
             <span className="text-sm text-brand-100">
-              {currentUser.name}{' '}
-              <span className="text-brand-100/60">· {ROLE_LABEL[role]}</span>
+              {currentUser.name} <span className="text-brand-100/60">· {ROLE_LABEL[role]}</span>
             </span>
             <button
               onClick={() => {
@@ -136,9 +198,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 px-4 py-3">
         <p className="text-[11px] text-slate-400 text-center max-w-3xl mx-auto">
-          <span className="font-semibold text-amber-600">Concept demo.</span> SwiftMart General
-          Store is fictional — all products, sales and figures are demo seed data stored only in
-          your browser. Checkout is simulated; no real payments are processed.
+          <span className="font-semibold text-slate-500">
+            SwiftPOS is the developer&apos;s own original portfolio build.
+          </span>{' '}
+          SwiftMart General Store is fictional and all figures shown are demo seed data. Cash / Card
+          / Digital tenders are recorded on each sale — no live payment processing.
         </p>
       </footer>
     </div>

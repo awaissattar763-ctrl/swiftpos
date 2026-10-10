@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useStore, roleAllowed } from '@/lib/store';
 import { DemoUser, ROLE_LABEL, Role } from '@/lib/types';
 import Denied from '@/components/Denied';
-import { uid } from '@/lib/format';
 
 export default function UsersPage() {
   const { data, currentUser, saveUser, setUserActive } = useStore();
@@ -16,13 +15,6 @@ export default function UsersPage() {
   if (!roleAllowed(currentUser?.role, 'users')) return <Denied />;
   if (!data) return null;
 
-  const openAdd = () => {
-    setEditing({ id: uid('u'), name: '', role: 'cashier', active: true });
-    setName('');
-    setRole('cashier');
-    setError('');
-  };
-
   const openEdit = (u: DemoUser) => {
     setEditing({ ...u });
     setName(u.name);
@@ -30,32 +22,44 @@ export default function UsersPage() {
     setError('');
   };
 
-  const save = () => {
+  const save = async () => {
     if (!editing) return;
     if (!name.trim()) return setError('Name is required.');
-    saveUser({ ...editing, name: name.trim(), role });
+    const res = await saveUser({ ...editing, name: name.trim(), role });
+    if (res.error) return setError(res.error);
     setEditing(null);
+  };
+
+  const toggle = async (u: DemoUser) => {
+    const res = await setUserActive(u.id, !u.active);
+    if (res.error) setError(res.error);
   };
 
   return (
     <div className="space-y-4 max-w-4xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
-          <p className="text-sm text-slate-500">Demo accounts only — no real authentication.</p>
-        </div>
-        <button className="btn-primary" onClick={openAdd}>+ Add user</button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
+        <p className="text-sm text-slate-500">
+          Roles and access for real Supabase Auth accounts. New logins are created in the Supabase
+          dashboard (Authentication → Users) — they appear here automatically with the cashier role;
+          promote them here.
+        </p>
       </div>
+
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+      )}
 
       <div className="table-wrap">
         <table className="data">
           <thead>
-            <tr><th>Name</th><th>Role</th><th>Status</th><th></th></tr>
+            <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             {data.users.map((u) => (
               <tr key={u.id}>
                 <td className="font-medium">{u.name}</td>
+                <td className="text-slate-500 text-xs font-mono">{u.email || '—'}</td>
                 <td>
                   <span className="text-xs font-semibold bg-brand-50 text-brand-700 rounded-full px-2.5 py-1">
                     {ROLE_LABEL[u.role]}
@@ -72,7 +76,7 @@ export default function UsersPage() {
                   </button>
                   <button
                     className={`text-sm font-medium ${u.active ? 'text-amber-600 hover:text-amber-800' : 'text-green-600 hover:text-green-800'}`}
-                    onClick={() => setUserActive(u.id, !u.active)}
+                    onClick={() => toggle(u)}
                     disabled={u.id === currentUser?.id}
                     title={u.id === currentUser?.id ? 'You cannot deactivate yourself' : ''}
                   >
@@ -88,9 +92,7 @@ export default function UsersPage() {
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="card w-full max-w-sm p-6">
-            <h2 className="text-lg font-bold text-slate-900 mb-4">
-              {data.users.some((u) => u.id === editing.id) ? 'Edit user' : 'Add user'}
-            </h2>
+            <h2 className="text-lg font-bold text-slate-900 mb-4">Edit user</h2>
             <label className="label" htmlFor="uname">Name</label>
             <input id="uname" className="input mb-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
             <label className="label" htmlFor="urole">Role</label>

@@ -25,6 +25,8 @@ export default function PosPage() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [cashTendered, setCashTendered] = useState('');
   const [receipt, setReceipt] = useState<Sale | null>(null);
+  const [receiptQueued, setReceiptQueued] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
 
   if (!roleAllowed(currentUser?.role, 'pos')) return <Denied />;
   if (!data || !currentUser) return null;
@@ -95,25 +97,32 @@ export default function PosPage() {
     cartDetailed.length > 0 &&
     (tender !== 'cash' || (!isNaN(tendered) && tendered >= total));
 
-  const doCheckout = () => {
-    const sale = completeSale({
+  const doCheckout = async () => {
+    setCheckoutError('');
+    const res = await completeSale({
       lines: cart.map((l) => ({ productId: l.productId, qty: l.qty })),
       discountPct: discPct,
       tender,
       cashTendered: tender === 'cash' && !isNaN(tendered) ? round2(tendered) : undefined,
       cashier: currentUser.name,
     });
-    if (sale) {
-      setReceipt(sale);
-      setCheckoutOpen(false);
-      setCart([]);
-      setDiscountPct(0);
-      setCashTendered('');
-      setTender('cash');
+    if (res.error || !res.sale) {
+      setCheckoutError(res.error || 'Could not complete the sale.');
+      return;
     }
+    setReceipt(res.sale);
+    setReceiptQueued(res.queued);
+    setCheckoutOpen(false);
+    setCart([]);
+    setDiscountPct(0);
+    setCashTendered('');
+    setTender('cash');
   };
 
-  const newSale = () => setReceipt(null);
+  const newSale = () => {
+    setReceipt(null);
+    setReceiptQueued(false);
+  };
 
   return (
     <div className="space-y-4">
@@ -285,6 +294,12 @@ export default function PosPage() {
               Demo only — this tender is simulated and moves no real money.
             </p>
 
+            {checkoutError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
+                {checkoutError}
+              </p>
+            )}
+
             <div className="flex gap-2">
               <button className="btn-secondary flex-1" onClick={() => setCheckoutOpen(false)}>Back</button>
               <button className="btn-primary flex-1" disabled={!canComplete} onClick={doCheckout}>
@@ -300,6 +315,11 @@ export default function PosPage() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="card w-full max-w-sm p-0 overflow-hidden">
             <div id="receipt-print" className="p-6 bg-white">
+              {receiptQueued && (
+                <p className="text-center text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                  Queued on this device — will sync to the database when back online.
+                </p>
+              )}
               <div className="text-center mb-4">
                 <div className="font-bold text-lg">SwiftMart General Store</div>
                 <div className="text-xs text-slate-500">123 Market Street · Demo receipt</div>

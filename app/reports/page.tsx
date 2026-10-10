@@ -13,11 +13,34 @@ type Tab = 'sales' | 'profit' | 'expenses' | 'inventory';
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export default function ReportsPage() {
-  const { data, currentUser } = useStore();
+  const { data, currentUser, addExpense } = useStore();
   const [preset, setPreset] = useState<Preset>('30d');
   const [tab, setTab] = useState<Tab>('sales');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [showExpForm, setShowExpForm] = useState(false);
+  const [expDate, setExpDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expCat, setExpCat] = useState('Supplies');
+  const [expDesc, setExpDesc] = useState('');
+  const [expAmt, setExpAmt] = useState('');
+  const [expError, setExpError] = useState('');
+
+  const submitExpense = async () => {
+    setExpError('');
+    const amt = parseFloat(expAmt);
+    if (!expDate) return setExpError('Date is required.');
+    if (isNaN(amt) || amt <= 0) return setExpError('Enter a valid amount.');
+    const res = await addExpense({
+      date: expDate,
+      category: expCat,
+      description: expDesc.trim() || expCat,
+      amount: Math.round(amt * 100) / 100,
+    });
+    if (res.error) return setExpError(res.error);
+    setShowExpForm(false);
+    setExpDesc('');
+    setExpAmt('');
+  };
 
   if (!roleAllowed(currentUser?.role, 'reports')) return <Denied />;
   if (!data) return null;
@@ -241,6 +264,47 @@ export default function ReportsPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="Total expenses" value={money(totalExpenses)} sub={`${expenses.length} entries`} icon="💸" />
+          </div>
+          <div>
+            {!showExpForm ? (
+              <button className="btn-primary" onClick={() => { setShowExpForm(true); setExpError(''); }}>
+                + Add expense
+              </button>
+            ) : (
+              <div className="card p-4">
+                <h3 className="font-bold text-slate-900 mb-3">New expense</h3>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="label">Date</label>
+                    <input type="date" className="input" value={expDate} onChange={(e) => setExpDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">Category</label>
+                    <select className="input" value={expCat} onChange={(e) => setExpCat(e.target.value)}>
+                      <option>Rent</option>
+                      <option>Salaries</option>
+                      <option>Utilities</option>
+                      <option>Supplies</option>
+                      <option>Marketing</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Description</label>
+                    <input className="input" value={expDesc} onChange={(e) => setExpDesc(e.target.value)} placeholder="What was it for?" />
+                  </div>
+                  <div>
+                    <label className="label">Amount ($)</label>
+                    <input type="number" min={0} step="0.01" className="input" value={expAmt} onChange={(e) => setExpAmt(e.target.value)} placeholder="0.00" />
+                  </div>
+                </div>
+                {expError && <p className="text-xs text-red-600 mt-2">{expError}</p>}
+                <div className="flex gap-2 mt-4 max-w-md">
+                  <button className="btn-secondary flex-1" onClick={() => setShowExpForm(false)}>Cancel</button>
+                  <button className="btn-primary flex-1" onClick={submitExpense}>Save expense</button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="grid lg:grid-cols-2 gap-4">
             <div className="card p-5">
