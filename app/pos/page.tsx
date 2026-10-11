@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore, roleAllowed } from '@/lib/store';
+import { getSupabase } from '@/lib/supabase';
 import { money, fmtDateTime } from '@/lib/format';
 import { Product, Sale, Tender, TENDER_LABEL } from '@/lib/types';
 import Denied from '@/components/Denied';
@@ -27,6 +28,18 @@ export default function PosPage() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [receiptQueued, setReceiptQueued] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
+  const [onCredit, setOnCredit] = useState(false);
+  const [creditCustomer, setCreditCustomer] = useState('');
+
+  useEffect(() => {
+    getSupabase()
+      .from('customers')
+      .select('id,name')
+      .eq('is_active', true)
+      .order('name')
+      .then(({ data }) => setCustomers((data || []) as { id: string; name: string }[]));
+  }, []);
 
   if (!roleAllowed(currentUser?.role, 'pos')) return <Denied />;
   if (!data || !currentUser) return null;
@@ -95,16 +108,23 @@ export default function PosPage() {
   const change = !isNaN(tendered) ? round2(tendered - total) : 0;
   const canComplete =
     cartDetailed.length > 0 &&
-    (tender !== 'cash' || (!isNaN(tendered) && tendered >= total));
+    (onCredit || tender !== 'cash' || (!isNaN(tendered) && tendered >= total));
 
   const doCheckout = async () => {
     setCheckoutError('');
+    if (onCredit && !creditCustomer) {
+      setCheckoutError('Select a customer for the credit (khata) sale.');
+      return;
+    }
+    const cust = customers.find((c) => c.id === creditCustomer);
     const res = await completeSale({
       lines: cart.map((l) => ({ productId: l.productId, qty: l.qty })),
       discountPct: discPct,
       tender,
       cashTendered: tender === 'cash' && !isNaN(tendered) ? round2(tendered) : undefined,
       cashier: currentUser.name,
+      customerId: onCredit ? creditCustomer : undefined,
+      customerName: onCredit && cust ? cust.name : undefined,
     });
     if (res.error || !res.sale) {
       setCheckoutError(res.error || 'Could not complete the sale.');
@@ -117,6 +137,8 @@ export default function PosPage() {
     setDiscountPct(0);
     setCashTendered('');
     setTender('cash');
+    setOnCredit(false);
+    setCreditCustomer('');
   };
 
   const newSale = () => {
@@ -287,6 +309,28 @@ export default function PosPage() {
                 {!isNaN(tendered) && tendered < total && (
                   <p className="text-xs text-red-600 mt-2">Tendered amount is less than the total.</p>
                 )}
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-3">
+              <input
+                type="checkbox"
+                checked={onCredit}
+                onChange={(e) => setOnCredit(e.target.checked)}
+                className="w-4 h-4"
+              />
+              Sell on credit <span className="text-xs text-slate-400">(khata — adds to customer ledger)</span>
+            </label>
+
+            {onCredit && (
+              <div className="mb-3">
+                <label className="label">Customer *</label>
+                <select className="input" value={creditCustomer} onChange={(e) => setCreditCustomer(e.target.value)}>
+                  <option value="">Select customer…</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
             )}
 

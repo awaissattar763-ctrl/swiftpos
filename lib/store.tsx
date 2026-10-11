@@ -22,6 +22,8 @@ export interface NewSaleInput {
   tender: Tender;
   cashTendered?: number;
   cashier: string;
+  customerId?: string;
+  customerName?: string;
 }
 
 export interface NewReturnInput {
@@ -900,10 +902,34 @@ async function insertSaleRemote(
           input.cashTendered !== undefined ? round2(input.cashTendered - total) : null,
         cashier_id: cashierId,
         cashier_name: input.cashier,
+        customer_id: input.customerId || null,
+        customer_name: input.customerName || '',
       })
       .select('id,sale_number,occurred_at')
       .single();
     if (sErr) throw sErr;
+
+    // Credit (khata) sale: append to the customer's ledger
+    if (input.customerId) {
+      const { data: last } = await sb
+        .from('customer_ledger')
+        .select('balance_after')
+        .eq('customer_id', input.customerId)
+        .order('occurred_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const prevBal = Number(last?.balance_after ?? 0);
+      await sb.from('customer_ledger').insert({
+        customer_id: input.customerId,
+        type: 'sale',
+        amount: total,
+        balance_after: round2(prevBal + total),
+        reference: saleRow.sale_number,
+        notes: `Credit sale ${saleRow.sale_number}`,
+        created_by: cashierId,
+      });
+    }
 
     const { error: iErr } = await sb.from('sale_items').insert(
       items.map((i) => ({
@@ -995,6 +1021,9 @@ export function roleAllowed(role: Role | undefined, page: string): boolean {
     pos: ['admin', 'manager', 'cashier'],
     returns: ['admin', 'manager', 'cashier'],
     inventory: ['admin', 'manager'],
+    suppliers: ['admin', 'manager'],
+    customers: ['admin', 'manager', 'cashier'],
+    employees: ['admin', 'manager'],
     reports: ['admin', 'manager'],
     users: ['admin'],
     data: ['admin', 'manager'],

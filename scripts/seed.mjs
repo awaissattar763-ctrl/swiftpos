@@ -306,6 +306,191 @@ async function seedExpenses(adminId) {
   console.log(`  expenses: ${rows.length}`);
 }
 
+const DEMO_SUPPLIERS = [
+  { name: 'FreshLine Distributors', phone: '+92 300 1112233', email: 'orders@freshline.pk', address: 'Plot 12, Industrial Area', city: 'Lahore', country: 'Pakistan', payment_terms: 'Net 15' },
+  { name: 'Metro Foods Wholesale', phone: '+92 321 4455667', email: 'sales@metrofoods.pk', address: 'Main Boulevard, Gulberg', city: 'Lahore', country: 'Pakistan', payment_terms: 'Cash on delivery' },
+  { name: 'PakDairy Suppliers', phone: '+92 333 7788990', email: 'info@pakdairy.pk', address: 'Dairy Colony', city: 'Karachi', country: 'Pakistan', payment_terms: 'Net 30' },
+  { name: 'Global Beverages Co.', phone: '+1 312 555 0142', email: 'orders@globalbev.com', address: '440 W Randolph St', city: 'Chicago', country: 'USA', payment_terms: 'Net 30' },
+  { name: 'HomeCare Essentials Ltd', phone: '+92 345 9900112', email: 'trade@homecare.pk', address: 'S.I.T.E. Area', city: 'Karachi', country: 'Pakistan', payment_terms: 'Net 15' },
+];
+
+const DEMO_CUSTOMERS = [
+  { name: 'Ahmed Raza', phone: '+92 300 5551234', address: 'House 45, DHA Phase 2, Lahore', credit_limit: 50000 },
+  { name: 'Fatima Siddiqui', phone: '+92 321 6667890', address: 'Flat 12-B, Gulshan, Karachi', credit_limit: 25000 },
+  { name: 'Bilal Chaudhry', phone: '+92 333 7774567', address: 'Shop 8, Anarkali Bazaar, Lahore', credit_limit: 100000 },
+  { name: 'Ayesha Malik', phone: '+92 345 8882345', address: 'Street 7, Model Town, Lahore', credit_limit: 30000 },
+  { name: 'Usman Tariq', phone: '+92 300 9996789', address: 'House 112, Bahria Town, Karachi', credit_limit: 75000 },
+  { name: 'Sana Iqbal', phone: '+92 321 1113456', address: 'Apartment 5-C, Clifton, Karachi', credit_limit: 20000 },
+  { name: 'Imran Sheikh', phone: '+92 333 2227890', address: 'Main Road, Sialkot', credit_limit: 60000 },
+  { name: 'Nadia Hussain', phone: '+92 345 3334567', address: 'House 78, Satellite Town, Rawalpindi', credit_limit: 40000 },
+  { name: 'Kamran Ali', phone: '+92 300 4448901', address: 'Shop 3, Liberty Market, Lahore', credit_limit: 80000 },
+  { name: 'Rabia Anwar', phone: '+92 321 5552345', address: 'Street 15, Johar Town, Lahore', credit_limit: 35000 },
+];
+
+const DEMO_EMPLOYEES = [
+  { name: 'Hassan Raza', phone: '+92 300 1237890', role: 'cashier', salary_monthly: 45000, hire_date: '2025-11-15' },
+  { name: 'Maryam Nawaz', phone: '+92 321 2348901', role: 'cashier', salary_monthly: 42000, hire_date: '2026-02-01' },
+  { name: 'Danish Ali', phone: '+92 333 3459012', role: 'staff', salary_monthly: 38000, hire_date: '2026-05-10' },
+  { name: 'Saba Qureshi', phone: '+92 345 4560123', role: 'manager', salary_monthly: 75000, hire_date: '2025-08-01' },
+];
+
+async function seedSuppliers(bySku) {
+  const { count } = await supabase.from('suppliers').select('id', { count: 'exact', head: true });
+  if (count && count > 0) {
+    console.log(`  suppliers already present (${count}) — skipping`);
+    return;
+  }
+  const { data: sups, error } = await supabase.from('suppliers').insert(DEMO_SUPPLIERS).select('id,name');
+  if (error) throw error;
+  console.log(`  suppliers: ${sups.length}`);
+
+  // 8 purchase orders: 5 received, 2 ordered, 1 draft
+  const rand = mulberry32(4242);
+  const skus = Object.keys(bySku);
+  const statuses = ['received', 'received', 'received', 'received', 'received', 'ordered', 'ordered', 'draft'];
+  let poCount = 0;
+  for (let i = 0; i < statuses.length; i++) {
+    const sup = sups[i % sups.length];
+    const nItems = 3 + Math.floor(rand() * 4);
+    const items = [];
+    const used = new Set();
+    for (let k = 0; k < nItems; k++) {
+      const sku = skus[Math.floor(rand() * skus.length)];
+      if (used.has(sku)) continue;
+      used.add(sku);
+      const p = bySku[sku];
+      const qty = 10 + Math.floor(rand() * 40);
+      items.push({ product_id: p.id, product_name: p.name, qty, unit_cost: round2(p.cost_price * (0.95 + rand() * 0.1)) });
+    }
+    const subtotal = round2(items.reduce((a, it) => a + it.qty * it.unit_cost, 0));
+    const tax = round2(subtotal * 0.05);
+    const daysAgo = 5 + Math.floor(rand() * 50);
+    const orderDate = new Date();
+    orderDate.setDate(orderDate.getDate() - daysAgo);
+    const { data: po, error: poErr } = await supabase
+      .from('purchase_orders')
+      .insert({
+        supplier_id: sup.id,
+        order_date: orderDate.toISOString().slice(0, 10),
+        expected_date: new Date(orderDate.getTime() + 7 * 864e5).toISOString().slice(0, 10),
+        status: statuses[i],
+        subtotal,
+        tax,
+        total: round2(subtotal + tax),
+        received_at: statuses[i] === 'received' ? orderDate.toISOString() : null,
+      })
+      .select('id,po_number')
+      .single();
+    if (poErr) throw poErr;
+    const { error: iErr } = await supabase.from('purchase_items').insert(items.map((it) => ({ ...it, po_id: po.id })));
+    if (iErr) throw iErr;
+    if (statuses[i] === 'received') {
+      // mirror receiving: bump stock + log movements
+      for (const it of items) {
+        const p = bySku[Object.keys(bySku).find((s) => bySku[s].id === it.product_id)];
+        const { data: cur } = await supabase.from('products').select('stock_qty').eq('id', it.product_id).single();
+        await supabase.from('products').update({ stock_qty: (cur?.stock_qty ?? 0) + it.qty }).eq('id', it.product_id);
+        await supabase.from('stock_movements').insert({
+          product_id: it.product_id,
+          change_qty: it.qty,
+          reason: 'purchase',
+          ref_id: po.po_number,
+        });
+      }
+    }
+    poCount++;
+  }
+  console.log(`  purchase orders: ${poCount}`);
+}
+
+async function seedCustomers() {
+  const { count } = await supabase.from('customers').select('id', { count: 'exact', head: true });
+  if (count && count > 0) {
+    console.log(`  customers already present (${count}) — skipping`);
+    return;
+  }
+  const { data: custs, error } = await supabase.from('customers').insert(DEMO_CUSTOMERS).select('id,name');
+  if (error) throw error;
+  console.log(`  customers: ${custs.length}`);
+
+  // ledger entries: a few sales on credit + some payments
+  const rand = mulberry32(9090);
+  let entries = 0;
+  for (const c of custs) {
+    let bal = 0;
+    const nSales = 1 + Math.floor(rand() * 3);
+    for (let s = 0; s < nSales; s++) {
+      const amt = round2(500 + rand() * 8000);
+      bal = round2(bal + amt);
+      const d = new Date();
+      d.setDate(d.getDate() - Math.floor(rand() * 25));
+      await supabase.from('customer_ledger').insert({
+        customer_id: c.id,
+        occurred_at: d.toISOString(),
+        type: 'sale',
+        amount: amt,
+        balance_after: bal,
+        reference: `S-${String(100000 + Math.floor(rand() * 899999))}`,
+        notes: 'Credit sale (khata)',
+      });
+      entries++;
+    }
+    if (rand() < 0.7 && bal > 0) {
+      const pay = round2(Math.min(bal, 500 + rand() * bal * 0.6));
+      bal = round2(bal - pay);
+      const d = new Date();
+      d.setDate(d.getDate() - Math.floor(rand() * 10));
+      await supabase.from('customer_ledger').insert({
+        customer_id: c.id,
+        occurred_at: d.toISOString(),
+        type: 'payment',
+        amount: -pay,
+        balance_after: bal,
+        reference: `PAY-${Date.now().toString(36).toUpperCase()}`,
+        notes: 'Payment received',
+      });
+      entries++;
+    }
+  }
+  console.log(`  ledger entries: ${entries}`);
+}
+
+async function seedEmployees(adminId) {
+  const { count } = await supabase.from('employees').select('id', { count: 'exact', head: true });
+  if (count && count > 0) {
+    console.log(`  employees already present (${count}) — skipping`);
+    return;
+  }
+  const { data: emps, error } = await supabase.from('employees').insert(DEMO_EMPLOYEES).select('id,name,salary_monthly');
+  if (error) throw error;
+  console.log(`  employees: ${emps.length}`);
+
+  // 2 months of salary payments (last month + month before)
+  const now = new Date();
+  const months = [0, 1].map((back) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - back - 1, 1);
+    return d.toISOString().slice(0, 7);
+  });
+  let pays = 0;
+  for (const e of emps) {
+    for (const m of months) {
+      const [y, mo] = m.split('-').map(Number);
+      const paidDate = new Date(y, mo, 5).toISOString().slice(0, 10);
+      const { error: pErr } = await supabase.from('salary_payments').insert({
+        employee_id: e.id,
+        month: m,
+        amount: e.salary_monthly,
+        paid_date: paidDate,
+        notes: 'Monthly salary',
+        created_by: adminId,
+      });
+      if (pErr && !/duplicate|unique/i.test(pErr.message)) throw pErr;
+      if (!pErr) pays++;
+    }
+  }
+  console.log(`  salary payments: ${pays}`);
+}
+
 async function main() {
   console.log('Seeding SwiftPOS demo data…');
   const ids = await ensureUsers();
@@ -313,6 +498,9 @@ async function main() {
   const { bySku } = await seedProducts(catMap);
   await seedSales(bySku, ids['cashier'], 'Sara Malik');
   await seedExpenses(ids['admin']);
+  await seedSuppliers(bySku);
+  await seedCustomers();
+  await seedEmployees(ids['admin']);
   console.log('\nDone. Demo logins (password: ' + SEED_PASSWORD + '):');
   for (const u of DEMO_USERS) console.log(`  ${u.role.padEnd(8)} ${u.email}`);
 }
